@@ -329,8 +329,21 @@ elif DEVICE_TYPE == "mps":
 
 # MLX path: skip GPU kernels/models entirely, use pure MLX
 if DEVICE_TYPE == "mps":
-    from .kernels.mlx import MLXTrainer, MLXTrainingConfig
-    from .kernels.mlx import FastLanguageModel, FastModel
+    # Pure MLX modules are provided by the mlx integration layer.
+    # See unsloth/kernels/mlx/ for the full implementation.
+    try:
+        from .kernels.mlx import MLXTrainer, TrainingConfig as MLXTrainingConfig
+        from .kernels.mlx.fast_language_model import FastLanguageModel, FastModel
+    except ImportError:
+        import warnings
+        warnings.warn(
+            "Unsloth: Apple Silicon detected but MLX modules not found.\n"
+            "Install MLX support with: pip install 'unsloth[apple]'"
+        )
+        MLXTrainer = None
+        MLXTrainingConfig = None
+        FastLanguageModel = None
+        FastModel = None
     __version__ = "0.1.0-mlx"
 else:
     from .models import *
