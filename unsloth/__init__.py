@@ -15,7 +15,13 @@
 import warnings, importlib, sys
 from packaging.version import Version
 import os, re, subprocess, inspect, functools
+import platform
 import numpy as np
+
+# Force disable PyTorch compilation on Mac to prevent
+# the 'transformers' flex_attention Triton compiler crash
+if platform.system() == "Darwin":
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
 
 # Log Unsloth is being used
 os.environ["UNSLOTH_IS_PRESENT"] = "1"
@@ -76,6 +82,16 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 from importlib.metadata import version as importlib_version
 from importlib.metadata import PackageNotFoundError
 
+# ==============================================================================
+# Apple Silicon MLX Patch - MUST be applied before unsloth_zoo import
+# ==============================================================================
+# unsloth_zoo.device_type raises NotImplementedError on Apple Silicon.
+# This patch injects a mock device_type module that returns "mps".
+from .patches import patch_unsloth_zoo_for_mlx
+
+_mlx_patched = patch_unsloth_zoo_for_mlx()
+del patch_unsloth_zoo_for_mlx
+
 # Check for unsloth_zoo
 try:
     unsloth_zoo_version = importlib_version("unsloth_zoo")
@@ -119,7 +135,6 @@ from unsloth_zoo.device_type import (
     DEVICE_TYPE_TORCH,
     DEVICE_COUNT,
     ALLOW_PREQUANTIZED_MODELS,
-    IS_MLX,
 )
 
 # Fix other issues
@@ -205,12 +220,33 @@ elif DEVICE_TYPE == "xpu":
     # torch.xpu.is_bf16_supported() does not have including_emulation
     # set SUPPORTS_BFLOAT16 as torch.xpu.is_bf16_supported()
     SUPPORTS_BFLOAT16 = torch.xpu.is_bf16_supported()
-elif DEVICE_TYPE == "mlx":
-    SUPPORTS_BFLOAT16 = True  # Apple Silicon natively supports bfloat16
+elif DEVICE_TYPE == "mps":
+    # MPS bfloat16 support depends on PyTorch version and chip
+    try:
+        test_tensor = torch.tensor([1.0], dtype=torch.bfloat16, device="mps")
+        _ = test_tensor + test_tensor  # Test an operation
+        SUPPORTS_BFLOAT16 = True
+        del test_tensor
+    except Exception:
+        SUPPORTS_BFLOAT16 = False
+
+    print(
+        f"Unsloth: Running on Apple Silicon (MPS)\n"
+        f"   bfloat16 support: {SUPPORTS_BFLOAT16}\n"
+        f"   Note: 16-bit LoRA and full finetuning work."
+    )
 
 # For Gradio HF Spaces?
 # if "SPACE_AUTHOR_NAME" not in os.environ and "SPACE_REPO_NAME" not in os.environ:
-import triton
+
+# Triton does not support MPS/Metal - skip import for Apple Silicon
+if DEVICE_TYPE != "mps":
+    try:
+        import triton
+    except Exception:
+        triton = None
+else:
+    triton = None
 
 if DEVICE_TYPE == "cuda":
     libcuda_dirs = lambda: None
@@ -294,30 +330,30 @@ elif DEVICE_TYPE == "xpu":
 
     # TODO: check triton for intel installed properly.
     pass
+elif DEVICE_TYPE == "mps":
+    # MPS/Apple Silicon - bitsandbytes and Triton are not available
+    bnb = None
+    triton = None
+    # patches.py already applied the comprehensive MacPatcher
+    # via patch_unsloth_zoo_for_mlx(). No further manual patching needed here.
 
-# MLX path: skip GPU kernels/models entirely, use mlx-lm directly
-if IS_MLX:
-    from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
-    from unsloth_zoo.mlx_loader import FastLanguageModel, FastModel
-    __version__ = unsloth_zoo.__version__
-else:
-    from .models import *
-    from .models import __version__
-    from .save import *
-    from .chat_templates import *
-    from .tokenizer_utils import *
-    from .trainer import *
+from .models import *
+from .models import __version__
+from .save import *
+from .chat_templates import *
+from .tokenizer_utils import *
+from .trainer import *
 
-    # Export dataprep utilities for CLI and downstream users
-    from .dataprep.raw_text import RawTextDataLoader, TextPreprocessor
-    from unsloth_zoo.rl_environments import (
-        check_python_modules,
-        create_locked_down_function,
-        execute_with_time_limit,
-        Benchmarker,
-        is_port_open,
-        launch_openenv,
-    )
+# Export dataprep utilities for CLI and downstream users
+from .dataprep.raw_text import RawTextDataLoader, TextPreprocessor
+from unsloth_zoo.rl_environments import (
+    check_python_modules,
+    create_locked_down_function,
+    execute_with_time_limit,
+    Benchmarker,
+    is_port_open,
+    launch_openenv,
+)
 
-    # Patch TRL trainers for backwards compatibility
-    _patch_trl_trainer()
+# Patch TRL trainers for backwards compatibility
+_patch_trl_trainer()
