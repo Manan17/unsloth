@@ -117,6 +117,14 @@ from .trainer import (
     TrainingConfig,
 )
 
+# Alias for backwards compatibility with unsloth __init__.py imports
+MLXTrainingConfig = TrainingConfig
+
+from .fast_language_model import (
+    FastLanguageModel,
+    FastModel,
+)
+
 from .lora import (
     LoRALinear,
     LoRAEmbedding,
@@ -197,6 +205,10 @@ __all__ = [
     # Trainer
     "MLXTrainer",
     "TrainingConfig",
+    "MLXTrainingConfig",
+    # High-level API
+    "FastLanguageModel",
+    "FastModel",
     # LoRA
     "LoRALinear",
     "LoRAEmbedding",
