@@ -15,7 +15,13 @@
 import warnings, importlib, sys
 from packaging.version import Version
 import os, re, subprocess, inspect, functools
+import platform
 import numpy as np
+
+# Force disable PyTorch compilation on Mac to prevent
+# the 'transformers' flex_attention Triton compiler crash
+if platform.system() == "Darwin":
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
 
 # Log Unsloth is being used
 os.environ["UNSLOTH_IS_PRESENT"] = "1"
@@ -76,6 +82,16 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 from importlib.metadata import version as importlib_version
 from importlib.metadata import PackageNotFoundError
 
+# ==============================================================================
+# Apple Silicon MLX Patch - MUST be applied before unsloth_zoo import
+# ==============================================================================
+# unsloth_zoo.device_type raises NotImplementedError on Apple Silicon.
+# This patch injects a mock device_type module that returns "mps".
+from .patches import patch_unsloth_zoo_for_mlx
+
+_mlx_patched = patch_unsloth_zoo_for_mlx()
+del patch_unsloth_zoo_for_mlx
+
 # Check for unsloth_zoo
 try:
     unsloth_zoo_version = importlib_version("unsloth_zoo")
@@ -119,7 +135,6 @@ from unsloth_zoo.device_type import (
     DEVICE_TYPE_TORCH,
     DEVICE_COUNT,
     ALLOW_PREQUANTIZED_MODELS,
-    IS_MLX,
 )
 
 # Fix other issues
@@ -205,12 +220,25 @@ elif DEVICE_TYPE == "xpu":
     # torch.xpu.is_bf16_supported() does not have including_emulation
     # set SUPPORTS_BFLOAT16 as torch.xpu.is_bf16_supported()
     SUPPORTS_BFLOAT16 = torch.xpu.is_bf16_supported()
-elif DEVICE_TYPE == "mlx":
+elif DEVICE_TYPE == "mps":
     SUPPORTS_BFLOAT16 = True  # Apple Silicon natively supports bfloat16
+    print(
+        f"Unsloth: Running on Apple Silicon (MLX)\n"
+        f"   bfloat16 support: {SUPPORTS_BFLOAT16}\n"
+        f"   Note: Pure MLX training path active."
+    )
 
 # For Gradio HF Spaces?
 # if "SPACE_AUTHOR_NAME" not in os.environ and "SPACE_REPO_NAME" not in os.environ:
-import triton
+
+# Triton does not support Apple Silicon - skip import
+if DEVICE_TYPE != "mps":
+    try:
+        import triton
+    except Exception:
+        triton = None
+else:
+    triton = None
 
 if DEVICE_TYPE == "cuda":
     libcuda_dirs = lambda: None
@@ -294,12 +322,16 @@ elif DEVICE_TYPE == "xpu":
 
     # TODO: check triton for intel installed properly.
     pass
+elif DEVICE_TYPE == "mps":
+    # MPS/Apple Silicon - use pure MLX path, no bitsandbytes or Triton
+    bnb = None
+    triton = None
 
-# MLX path: skip GPU kernels/models entirely, use mlx-lm directly
-if IS_MLX:
-    from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
-    from unsloth_zoo.mlx_loader import FastLanguageModel, FastModel
-    __version__ = unsloth_zoo.__version__
+# MLX path: skip GPU kernels/models entirely, use pure MLX
+if DEVICE_TYPE == "mps":
+    from .kernels.mlx import MLXTrainer, MLXTrainingConfig
+    from .kernels.mlx import FastLanguageModel, FastModel
+    __version__ = "0.1.0-mlx"
 else:
     from .models import *
     from .models import __version__

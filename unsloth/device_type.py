@@ -14,19 +14,20 @@
 
 __all__ = [
     "is_hip",
+    "is_mps",
+    "is_mlx",
     "get_device_type",
     "DEVICE_TYPE",
     "DEVICE_TYPE_TORCH",
     "DEVICE_COUNT",
     "ALLOW_PREQUANTIZED_MODELS",
     "ALLOW_BITSANDBYTES",
-    "IS_MLX",
 ]
 
 import torch
-import platform
 import functools
 import inspect
+import os
 from unsloth_zoo.utils import Version
 
 
@@ -36,20 +37,27 @@ def is_hip():
 
 
 @functools.cache
+def is_mps():
+    """Check if Apple Metal Performance Shaders (MPS) backend is available."""
+    return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+
+
+@functools.cache
+def is_mlx():
+    """Check if Apple MLX backend is available (includes MPS check)."""
+    return is_mps()  # MLX requires MPS to be available
+
+
+@functools.cache
 def get_device_type():
-    # Check Apple Silicon first (MLX uses its own framework, not torch GPU)
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        try:
-            import mlx.core as _mx
-            return "mlx"
-        except ImportError:
-            pass
     if hasattr(torch, "cuda") and torch.cuda.is_available():
         if is_hip():
             return "hip"
         return "cuda"
     elif hasattr(torch, "xpu") and torch.xpu.is_available():
         return "xpu"
+    elif is_mps():
+        return "mps"  # Return "mps" for Apple Silicon (MLX uses MPS backend)
     # Check torch.accelerator
     if hasattr(torch, "accelerator"):
         if not torch.accelerator.is_available():
@@ -64,18 +72,18 @@ def get_device_type():
                 f"Please reinstall torch - it's most likely broken :("
             )
     raise NotImplementedError(
-        "Unsloth currently only works on NVIDIA, AMD, Intel GPUs, and Apple Silicon."
+        "Unsloth currently only works on NVIDIA, AMD, Intel GPUs, and Apple Silicon (MLX).\n"
+        "If you're on a Mac with Apple Silicon, ensure you have:\n"
+        "  1. PyTorch 2.1+ installed: pip install torch>=2.1.0\n"
+        '  2. MLX backend available: python -c "import torch; print(torch.backends.mps.is_available())"'
     )
 
 
 DEVICE_TYPE: str = get_device_type()
-IS_MLX: bool = (DEVICE_TYPE == "mlx")
 # HIP fails for autocast and other torch functions. Use CUDA instead
 DEVICE_TYPE_TORCH = DEVICE_TYPE
 if DEVICE_TYPE_TORCH == "hip":
     DEVICE_TYPE_TORCH = "cuda"
-if DEVICE_TYPE_TORCH == "mlx":
-    DEVICE_TYPE_TORCH = "cpu"
 
 
 @functools.cache
@@ -84,6 +92,9 @@ def get_device_count():
         return torch.cuda.device_count()
     elif DEVICE_TYPE == "xpu":
         return torch.xpu.device_count()
+    elif DEVICE_TYPE == "mps":
+        # MPS/MLX follows a single-GPU paradigm on Apple Silicon
+        return 1
     else:
         return 1
 
@@ -137,3 +148,18 @@ if DEVICE_TYPE == "hip":
                 Params4bit
             ):
                 ALLOW_PREQUANTIZED_MODELS = False
+
+elif DEVICE_TYPE == "mps":
+    # bitsandbytes does not support MPS/Apple Silicon yet
+    # See https://github.com/bitsandbytes-foundation/bitsandbytes/issues/1292
+    if os.environ.get("UNSLOTH_ENABLE_MLX_QUANT", "1") == "0":
+        print(
+            "Unsloth: bitsandbytes does not support Apple Silicon (MPS) yet. "
+            "4-bit/8-bit quantization is disabled, but 16-bit LoRA and full finetuning work."
+        )
+        ALLOW_PREQUANTIZED_MODELS = False
+        ALLOW_BITSANDBYTES = False
+    else:
+        # We will use MLX for quantization!
+        ALLOW_PREQUANTIZED_MODELS = True
+        ALLOW_BITSANDBYTES = False # Still keep False for bitsandbytes specific gates
