@@ -26,7 +26,10 @@ _IS_MLX = (
 if _IS_MLX:
     import unsloth_zoo
     from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
+    from unsloth_zoo.mlx_trainer import train_on_responses_only
     from unsloth_zoo.mlx_loader import FastMLXModel
+    from unsloth_zoo.dataset_utils import standardize_data_formats
+    standardize_sharegpt = standardize_data_formats
     __version__ = unsloth_zoo.__version__
 else:
     # Full GPU init: torch, triton, bitsandbytes, model patches, etc.
@@ -60,10 +63,25 @@ class FastLanguageModel:
     @staticmethod
     def for_inference(*args, **kwargs):
         if _IS_MLX:
-            raise NotImplementedError("Unsloth: for_inference not yet supported on MLX.")
+            model = args[0] if args else kwargs.get("model")
+            if model is not None:
+                model.eval()
+            return model
         else:
             from .models.loader import FastLanguageModel as _GPU
             return _GPU.for_inference(*args, **kwargs)
 
+    @staticmethod
+    def for_training(*args, **kwargs):
+        if _IS_MLX:
+            model = args[0] if args else kwargs.get("model")
+            if model is not None:
+                model.train()
+            return model
+        else:
+            from .models.loader import FastLanguageModel as _GPU
+            return _GPU.for_training(*args, **kwargs)
+
 
 FastModel = FastLanguageModel
+FastVisionModel = FastLanguageModel
