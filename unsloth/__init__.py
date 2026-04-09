@@ -29,6 +29,7 @@ if _IS_MLX:
     from unsloth_zoo.mlx_trainer import train_on_responses_only
     from unsloth_zoo.mlx_loader import FastMLXModel
     from unsloth_zoo.dataset_utils import standardize_data_formats
+
     standardize_sharegpt = standardize_data_formats
     __version__ = unsloth_zoo.__version__
 else:
@@ -50,6 +51,7 @@ class FastLanguageModel:
             return FastMLXModel.from_pretrained(*args, **kwargs)
         else:
             from .models.loader import FastLanguageModel as _GPU
+
             return _GPU.from_pretrained(*args, **kwargs)
 
     @staticmethod
@@ -58,6 +60,7 @@ class FastLanguageModel:
             return FastMLXModel.get_peft_model(*args, **kwargs)
         else:
             from .models.loader import FastLanguageModel as _GPU
+
             return _GPU.get_peft_model(*args, **kwargs)
 
     @staticmethod
@@ -69,6 +72,7 @@ class FastLanguageModel:
             return model
         else:
             from .models.loader import FastLanguageModel as _GPU
+
             return _GPU.for_inference(*args, **kwargs)
 
     @staticmethod
@@ -80,8 +84,9 @@ class FastLanguageModel:
             return model
         else:
             from .models.loader import FastLanguageModel as _GPU
+
             return _GPU.for_training(*args, **kwargs)
 
 
 FastModel = FastLanguageModel
-FastVisionModel = FastLanguageModel
+FastVisionModel = FastModel
