@@ -31,8 +31,20 @@ if _IS_MLX:
             "Unsloth: MLX support requires `unsloth-zoo` with MLX modules. "
             "Reinstall with `pip install unsloth-zoo` or rerun install.sh."
         ) from _e
-    from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
-    from unsloth_zoo.mlx_loader import FastMLXModel
+    # The mlx_trainer / mlx_loader submodules ship with unsloth-zoo's MLX
+    # support. An older installed unsloth-zoo (e.g. from PyPI before the
+    # MLX release lands) will satisfy `import unsloth_zoo` but be missing
+    # these submodules. Surface the same friendly install hint instead of
+    # a raw ImportError on the submodule path.
+    try:
+        from unsloth_zoo.mlx_trainer import MLXTrainer, MLXTrainingConfig
+        from unsloth_zoo.mlx_loader import FastMLXModel
+    except ImportError as _e:
+        raise ImportError(
+            "Unsloth: MLX support requires an unsloth-zoo build that includes "
+            "`unsloth_zoo.mlx_trainer` and `unsloth_zoo.mlx_loader`. Upgrade with "
+            "`pip install -U unsloth-zoo` or rerun install.sh."
+        ) from _e
 
     # Load raw_text helpers without executing dataprep/__init__.py, which
     # imports synthetic.py -> torch and would defeat the torch-free MLX path.
