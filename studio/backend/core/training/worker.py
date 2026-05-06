@@ -456,7 +456,13 @@ def _run_mlx_training(event_queue, stop_queue, config):
     from datasets import load_dataset
 
     if mx.metal.is_available():
-        mx.set_wired_limit(mx.device_info()["max_recommended_working_set_size"])
+        info = mx.device_info()
+        rec_bytes = info.get("max_recommended_working_set_size", 0) or 0
+        if rec_bytes > 0:
+            memory_cap = int(rec_bytes * 0.85)
+            wired_cap = min(int(rec_bytes), memory_cap)
+            mx.set_memory_limit(memory_cap)
+            mx.set_wired_limit(wired_cap)
 
     model_name = config["model_name"]
     hf_token = config.get("hf_token") or None

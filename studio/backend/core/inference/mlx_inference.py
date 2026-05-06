@@ -28,6 +28,39 @@ class MLXInferenceBackend:
         self._is_vlm = False
         self._config = {}
 
+        # Recorded for unload to release pinned memory back to the OS.
+        self._memory_limits_applied = {}
+
+    def _configure_memory_limits(self):
+        """Apply Metal memory caps before loading a model.
+
+        Mirrors MLXTrainer._configure_memory_limits's defaults:
+        memory_limit = 85% of recommended working-set,
+        wired_limit = min(recommended, memory_limit). Recorded so unload
+        can lower wired_limit back to release pinned RAM.
+        """
+        import mlx.core as mx
+        if not mx.metal.is_available():
+            return
+        info = mx.device_info()
+        rec_bytes = info.get("max_recommended_working_set_size")
+        if not rec_bytes or rec_bytes <= 0:
+            return
+        rec_gb = rec_bytes / 1e9
+        memory_limit_gb = rec_gb * 0.85
+        wired_limit_gb = min(rec_gb, memory_limit_gb)
+        mx.set_memory_limit(int(memory_limit_gb * 1e9))
+        mx.set_wired_limit(int(wired_limit_gb * 1e9))
+        self._memory_limits_applied = {
+            "memory_limit_gb": memory_limit_gb,
+            "wired_limit_gb": wired_limit_gb,
+            "recommended_gb": rec_gb,
+        }
+        logger.info(
+            "MLX memory caps: memory_limit=%.2f GB, wired_limit=%.2f GB",
+            memory_limit_gb, wired_limit_gb,
+        )
+
     def load_model(
         self,
         config,
@@ -47,9 +80,7 @@ class MLXInferenceBackend:
             import os
 
             os.environ["HF_TOKEN"] = hf_token
-
-        if mx.metal.is_available():
-            mx.set_wired_limit(mx.device_info()["max_recommended_working_set_size"])
+        self._configure_memory_limits()
 
         is_lora = getattr(config, "is_lora", False)
 
@@ -119,6 +150,18 @@ class MLXInferenceBackend:
             self.active_model_name = None
         gc.collect()
         mx.clear_cache()
+
+        if (
+            mx.metal.is_available()
+            and self._memory_limits_applied
+            and not self.models
+        ):
+            try:
+                mx.set_wired_limit(0)
+                logger.info("MLX wired_limit released back to OS on unload")
+            except Exception as e:
+                logger.warning("Failed to release wired_limit: %s", e)
+            self._memory_limits_applied = {}
         logger.info("Model %s unloaded", model_name)
         return True
 
