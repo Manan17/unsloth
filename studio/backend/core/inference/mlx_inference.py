@@ -40,6 +40,7 @@ class MLXInferenceBackend:
         can lower wired_limit back to release pinned RAM.
         """
         import mlx.core as mx
+
         if not mx.metal.is_available():
             return
         info = mx.device_info()
@@ -58,7 +59,8 @@ class MLXInferenceBackend:
         }
         logger.info(
             "MLX memory caps: memory_limit=%.2f GB, wired_limit=%.2f GB",
-            memory_limit_gb, wired_limit_gb,
+            memory_limit_gb,
+            wired_limit_gb,
         )
 
     def load_model(
@@ -151,11 +153,7 @@ class MLXInferenceBackend:
         gc.collect()
         mx.clear_cache()
 
-        if (
-            mx.metal.is_available()
-            and self._memory_limits_applied
-            and not self.models
-        ):
+        if mx.metal.is_available() and self._memory_limits_applied and not self.models:
             try:
                 mx.set_wired_limit(0)
                 logger.info("MLX wired_limit released back to OS on unload")
