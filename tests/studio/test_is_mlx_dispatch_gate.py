@@ -43,6 +43,7 @@ UNSLOTH_INIT = REPO_ROOT / "unsloth" / "__init__.py"
 # 1. Source-level structure check on _IS_MLX (no platform dependencies).
 # ---------------------------------------------------------------------------
 
+
 def test_is_mlx_gate_uses_three_required_predicates():
     """The _IS_MLX assignment must AND together exactly the three checks
     that Studio depends on: Darwin OS, arm64 machine, and an importable
@@ -61,20 +62,20 @@ def test_is_mlx_gate_uses_three_required_predicates():
             target = node.value
             break
     assert target is not None, "_IS_MLX assignment not found in unsloth/__init__.py"
-    assert isinstance(target, ast.BoolOp) and isinstance(target.op, ast.And), (
-        "_IS_MLX must be a BoolOp(And) of platform + mlx checks"
-    )
+    assert isinstance(target, ast.BoolOp) and isinstance(
+        target.op, ast.And
+    ), "_IS_MLX must be a BoolOp(And) of platform + mlx checks"
 
     expr_src = ast.unparse(target)
-    assert "platform.system()" in expr_src and "Darwin" in expr_src, (
-        "_IS_MLX must check platform.system() == 'Darwin'"
-    )
-    assert "platform.machine()" in expr_src and "arm64" in expr_src, (
-        "_IS_MLX must check platform.machine() == 'arm64'"
-    )
-    assert "find_spec" in expr_src and "'mlx'" in expr_src, (
-        "_IS_MLX must check importlib.util.find_spec('mlx')"
-    )
+    assert (
+        "platform.system()" in expr_src and "Darwin" in expr_src
+    ), "_IS_MLX must check platform.system() == 'Darwin'"
+    assert (
+        "platform.machine()" in expr_src and "arm64" in expr_src
+    ), "_IS_MLX must check platform.machine() == 'arm64'"
+    assert (
+        "find_spec" in expr_src and "'mlx'" in expr_src
+    ), "_IS_MLX must check importlib.util.find_spec('mlx')"
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,7 @@ def test_is_mlx_gate_uses_three_required_predicates():
 #    fake mlx module in sys.modules.  Re-evaluates the same expression
 #    rather than reloading unsloth (which would cascade-reload torch).
 # ---------------------------------------------------------------------------
+
 
 def _evaluate_is_mlx_gate(platform_module, importlib_util):
     """Re-evaluate the _IS_MLX expression using injected dependencies.
@@ -101,7 +103,7 @@ def test_is_mlx_gate_true_on_apple_silicon_with_mlx_present(monkeypatch):
 
     # Inject a fake mlx package so find_spec returns a non-None ModuleSpec.
     fake_mlx = types.ModuleType("mlx")
-    fake_mlx.__spec__ = importlib.machinery.ModuleSpec("mlx", loader=None)
+    fake_mlx.__spec__ = importlib.machinery.ModuleSpec("mlx", loader = None)
     fake_mlx.__path__ = []
     monkeypatch.setitem(sys.modules, "mlx", fake_mlx)
 
@@ -116,7 +118,7 @@ def test_is_mlx_gate_false_when_mlx_missing(monkeypatch):
     import importlib.util
 
     # Apple Silicon platform but no mlx package -> gate must be False.
-    monkeypatch.delitem(sys.modules, "mlx", raising=False)
+    monkeypatch.delitem(sys.modules, "mlx", raising = False)
     monkeypatch.setattr(platform, "system", lambda: "Darwin")
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
 
@@ -150,6 +152,7 @@ def test_is_mlx_gate_false_on_non_apple_silicon():
 # 3. Studio's runtime detect_hardware() picks MLX only when CUDA + XPU are
 #    both unavailable AND the host is Apple Silicon AND mlx is importable.
 # ---------------------------------------------------------------------------
+
 
 def _import_studio_hardware():
     """Lazy import for the Studio hardware module, with the bare-imports
@@ -203,6 +206,6 @@ def test_detect_hardware_picks_cuda_on_real_host():
 
     hw = _import_studio_hardware()
     detected = hw.detect_hardware()
-    assert detected == hw.DeviceType.CUDA, (
-        f"CUDA host must dispatch to CUDA, got {detected!r}"
-    )
+    assert (
+        detected == hw.DeviceType.CUDA
+    ), f"CUDA host must dispatch to CUDA, got {detected!r}"
